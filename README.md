@@ -8,6 +8,7 @@ GenAI Quiz Master is an interactive Streamlit web app that generates and manages
 - Score tracking and reward system
 - Detailed answer review with explanations
 - Customizable number of questions
+- **Displays time taken to complete the quiz in the results**
 
 ## Demo
 ![GenAI Quiz Master Screenshot](screenshot.png)
@@ -46,8 +47,15 @@ streamlit run app.py
 1. Enter a topic (e.g., "Python programming", "World History").
 2. Click **Start Quiz** to generate questions.
 3. Select your answer for each question and submit.
-4. View your score, reward, and review explanations at the end.
+4. View your score, time taken, reward, and review explanations at the end.
 5. Click **Restart Quiz** to try again or with a new topic.
+
+## Output Example
+- Your score and the **time taken** to complete the quiz are shown on the results page.
+- You will also see a detailed review of your answers and explanations for each question.
+
+## Screenshots
+*Screenshots will be added here soon.*
 
 ## Customization
 - Change the number of questions by editing the `NUM_QUESTIONS` variable in `app.py`.
