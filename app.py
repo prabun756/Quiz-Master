@@ -22,24 +22,24 @@ client = AzureOpenAI(
 # Application Configuration
 st.set_page_config(page_title="🎓 GenAI Quiz Master", layout="centered")
 st.title("🎓 GenAI Quiz Master")
-NUM_QUESTIONS = 6
-st.markdown(f"Test your knowledge with {NUM_QUESTIONS} AI-generated MCQs on your favorite topic!")
+st.markdown(f"Test your knowledge with a custom number of AI-generated MCQs on your favorite topic!")
 
 # Initialize session state variables for quiz management
 if "questions" not in st.session_state:
     for key in ["questions", "current_q", "score", "quiz_started", "quiz_complete", "user_answers"]:
         st.session_state[key] = [] if key == "questions" else 0 if key in ["current_q", "score"] else False if key in ["quiz_started", "quiz_complete"] else {}
 
-def generate_mcqs(topic):
+def generate_mcqs(topic, num_questions):
     """
     Generate multiple choice questions using Azure OpenAI.
     Args:
         topic (str): The topic to generate questions about
+        num_questions (int): Number of questions to generate
     Returns:
         str: Raw response containing formatted questions
     """
     prompt = f"""
-Generate exactly {NUM_QUESTIONS} multiple-choice questions on the topic "{topic}".
+Generate exactly {num_questions} multiple-choice questions on the topic "{topic}".
 Follow this exact format for EACH question, with exactly one empty line between questions:
 
 Q: <question>
@@ -50,7 +50,7 @@ D. <option D>
 Answer: <letter>
 Explanation: <explanation>
 
-Repeat this exact format {NUM_QUESTIONS} times. Make sure to include one empty line between each question.
+Repeat this exact format {num_questions} times. Make sure to include one empty line between each question.
 Do not include any additional text or formatting, except for question to start with "Q1:, Q2:, ...".
 """
     response = client.chat.completions.create(
@@ -60,11 +60,12 @@ Do not include any additional text or formatting, except for question to start w
     )
     return response.choices[0].message.content
 
-def parse_questions(text):
+def parse_questions(text, num_questions):
     """
     Parse the raw question text into structured format.
     Args:
         text (str): Raw question text from OpenAI
+        num_questions (int): Number of questions to parse
     Returns:
         list: List of dictionaries containing parsed questions
     Raises:
@@ -80,7 +81,7 @@ def parse_questions(text):
         print(text)  # Print cleaned text for debugging
         print(f"\n{'='*50}")
         print(f"Starting to parse questions...")
-        print(f"Expected number of questions: {NUM_QUESTIONS}")
+        print(f"Expected number of questions: {num_questions}")
         print(f"Raw text length: {len(text)} characters")
         
         questions = []
@@ -134,11 +135,11 @@ def parse_questions(text):
                 continue
         
         print(f"\nParsing complete. Found {len(questions)} valid questions")
-        if len(questions) < NUM_QUESTIONS:
-            st.error(f"Could not generate {NUM_QUESTIONS} valid questions. Please try again.")
+        if len(questions) < num_questions:
+            st.error(f"Could not generate {num_questions} valid questions. Please try again.")
             return []
         
-        return questions[:NUM_QUESTIONS]
+        return questions[:num_questions]
     except Exception as e:
         st.error(f"Error parsing questions: {str(e)}. Please try again.")
         return []
@@ -146,12 +147,13 @@ def parse_questions(text):
 # Quiz Initialization Interface
 if not st.session_state.quiz_started:
     topic = st.text_input("Enter a topic to begin:", "")
-    if st.button("Start Quiz") and topic:        
+    num_questions = st.number_input("How many questions?", min_value=1, max_value=30, value=3, step=1, key="num_questions")
+    if st.button("Start Quiz") and topic:
         try:
             with st.spinner("Generating questions..."):
-                raw = generate_mcqs(topic)
+                raw = generate_mcqs(topic, num_questions)
                 print(f"Generated raw text length: {len(raw)}")
-                questions = parse_questions(raw)
+                questions = parse_questions(raw, num_questions)
                 print(f"Parsed {len(questions)} valid questions")
                 if not questions:  # If we couldn't generate enough valid questions
                     st.error("Failed to generate questions. Please try again with a different topic.")
@@ -162,44 +164,66 @@ if not st.session_state.quiz_started:
                     st.session_state.score = 0
                     st.session_state.user_answers = {}
                     st.session_state.quiz_complete = False
+                    st.session_state.start_time = time.time()  # Start timer
                     time.sleep(0.1)
                     st.rerun()
         except Exception as e:
             st.error(f"An error occurred: {str(e)}. Please try again.")
 
+# Update NUM_QUESTIONS dynamically
+NUM_QUESTIONS = st.session_state.get("num_questions", 3)
+
 # Main Quiz Interface - Display questions and handle answers
 if st.session_state.quiz_started and not st.session_state.quiz_complete:
-    q = st.session_state.questions[st.session_state.current_q]
-    st.markdown(f"### Question {st.session_state.current_q + 1} of {NUM_QUESTIONS}")
-    st.markdown(f"**{q['question']}**")
+    # Defensive check to avoid IndexError
+    if st.session_state.current_q >= len(st.session_state.questions):
+        st.session_state.quiz_complete = True
+        st.rerun()
+    else:
+        q = st.session_state.questions[st.session_state.current_q]
+        total_questions = len(st.session_state.questions)
+        st.markdown(f"### Question {st.session_state.current_q + 1} of {total_questions}")
+        st.markdown(f"**{q['question']}**")
 
-    # Display radio buttons for answer options
-    selected = st.radio("Choose your answer:", list(q["options"].keys()),
-                        format_func=lambda x: f"{x}. {q['options'][x]}", key=f"q_{st.session_state.current_q}")
+        # Display radio buttons for answer options
+        selected = st.radio("Choose your answer:", list(q["options"].keys()),
+                            format_func=lambda x: f"{x}. {q['options'][x]}", key=f"q_{st.session_state.current_q}")
 
-    # Handle answer submission
-    if st.button("Submit Answer"):
-        st.session_state.user_answers[st.session_state.current_q] = selected
-        if selected == q["answer"]:
-            st.session_state.score += 1
-        if st.session_state.current_q < NUM_QUESTIONS - 1:
-            st.session_state.current_q += 1
-            # Reset radio selection for next question
-            for key in list(st.session_state.keys()):
-                if key.startswith('q_'):
-                    del st.session_state[key]
-            time.sleep(0.1)
-            st.rerun()
-        else:
-            st.session_state.quiz_complete = True
+        # Handle answer submission
+        if st.button("Submit Answer"):
+            st.session_state.user_answers[st.session_state.current_q] = selected
+            if selected == q["answer"]:
+                st.session_state.score += 1
+            if st.session_state.current_q < NUM_QUESTIONS - 1:
+                st.session_state.current_q += 1
+                # Reset radio selection for next question
+                for key in list(st.session_state.keys()):
+                    if key.startswith('q_'):
+                        del st.session_state[key]
+                time.sleep(0.1)
+                st.rerun()
+            else:
+                st.session_state.quiz_complete = True
+                # Store time taken
+                if "start_time" in st.session_state:
+                    st.session_state.time_taken = time.time() - st.session_state["start_time"]
 
 # Results and Review Interface
 if st.session_state.quiz_complete:
+    total_questions = len(st.session_state.questions)
     st.success("🎉 Quiz Complete!")
-    st.markdown(f"### Your Score: {st.session_state.score} / {NUM_QUESTIONS}")
+    st.markdown(f"### Your Score: {st.session_state.score} / {total_questions}")
+
+    # Timer: Show time taken
+    time_taken = st.session_state.get("time_taken")
+    if time_taken is None and "start_time" in st.session_state:
+        # Fallback if time_taken not set
+        time_taken = time.time() - st.session_state["start_time"]
+    if time_taken is not None:
+        st.info(f"⏱️ Time taken: {time_taken:.1f} seconds")
 
     # Calculate and display score with appropriate feedback
-    score_percentage = (st.session_state.score / NUM_QUESTIONS) * 100
+    score_percentage = (st.session_state.score / total_questions) * 100
     
     if score_percentage > 50:
         st.balloons()
